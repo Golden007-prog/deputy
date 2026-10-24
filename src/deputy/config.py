@@ -16,6 +16,10 @@ DEFAULT_BASE_URL = "https://api.deepinfra.com/v1/openai"
 DEFAULT_MODEL = "deepseek-ai/DeepSeek-V4.1-Flash-1017"
 DEFAULT_EFFORT = "high"
 EFFORTS = ("none", "low", "medium", "high", "max")
+# accuracy: Claude writes all code; Deputy only gives second opinions and reviews.
+# balanced: Deputy also takes low-risk mechanical work. savings: Deputy takes most coding work.
+MODES = ("accuracy", "balanced", "savings")
+DEFAULT_MODE = "accuracy"
 
 # Checked in order. OPENAI_API_KEY is deliberately NOT a fallback: sending
 # someone's real OpenAI key to another provider would leak it.
@@ -106,6 +110,7 @@ class Settings:
     base_url: str
     model: str
     effort: str
+    mode: str
     workspace: Path
     max_turns: int
     max_run_tokens: int
@@ -124,6 +129,7 @@ class Settings:
     def describe(self) -> dict:
         """A summary that is safe to show: it never contains the key."""
         return {
+            "mode": self.mode,
             "model": self.model,
             "endpoint": self.base_url,
             "thinking": self.effort,
@@ -132,6 +138,14 @@ class Settings:
             "max_turns": self.max_turns,
             "max_tokens_per_run": self.max_run_tokens,
         }
+
+
+def read_mode(env: Mapping[str, str] | None = None) -> str:
+    env = os.environ if env is None else env
+    mode = (_get(env, "DEPUTY_MODE") or DEFAULT_MODE).lower()
+    if mode not in MODES:
+        raise ConfigError(f"DEPUTY_MODE must be one of {', '.join(MODES)}, got {mode!r}")
+    return mode
 
 
 def _workspace(env: Mapping[str, str], cwd: Path | None) -> Path:
@@ -156,6 +170,7 @@ def load_settings(env: Mapping[str, str] | None = None, cwd: Path | None = None)
     effort = (_get(env, "DEPUTY_THINKING") or DEFAULT_EFFORT).lower()
     if effort not in EFFORTS:
         raise ConfigError(f"DEPUTY_THINKING must be one of {', '.join(EFFORTS)}, got {effort!r}")
+    mode = read_mode(env)
 
     known = KNOWN_PRICES.get((base_url, model), (0.0, 0.0, 0.0))
     return Settings(
@@ -164,6 +179,7 @@ def load_settings(env: Mapping[str, str] | None = None, cwd: Path | None = None)
         base_url=base_url,
         model=model,
         effort=effort,
+        mode=mode,
         workspace=_workspace(env, cwd),
         max_turns=_int(env, "DEPUTY_MAX_TURNS", 40, 1, 200),
         max_run_tokens=_int(env, "DEPUTY_MAX_RUN_TOKENS", 2_000_000, 10_000, 50_000_000),

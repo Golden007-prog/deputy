@@ -1,0 +1,61 @@
+---
+name: deputy
+description: Playbook for working with Deputy, a cheaper helper model (DeepSeek V4.1 Flash) exposed as MCP tools (consult, review, investigate, delegate). Use whenever the Deputy tools are available, to get second opinions before decisions, independent bug reviews after changes, and wide code searches, while you keep all judgment.
+---
+
+# Working with Deputy
+
+You are the lead. Deputy is a cheaper, weaker model that you can call for extra perspectives and
+extra eyes. Use it to be **more accurate**, never to skip your own judgment.
+
+> Using the Claude Code plugin? You already have this as `/deputy:consult`, `/deputy:review`,
+> `/deputy:investigate` and `/deputy:delegate`. Without the plugin, copy this file to
+> `~/.claude/skills/deputy/SKILL.md`.
+
+## The mode decides who writes code
+
+Call `status` once to see the mode.
+
+| Mode | Who writes code | Deputy is used for |
+|---|---|---|
+| **accuracy** (default) | You, always | `consult` before decisions, `review` after changes, `investigate` for wide searches. `delegate` only if the user asks |
+| **balanced** | You, for anything with logic or risk | Also `delegate` for low-risk mechanical work (boilerplate, renames, formatting, test scaffolding) |
+| **savings** | Deputy, for well-specified work | `delegate` most coding; you plan, review and verify |
+
+## The accuracy loop
+
+1. **Understand** the task yourself. Read the code that matters.
+2. **Consult** on non-trivial decisions. Write your own conclusion first and pass it as `my_view`
+   (Deputy does not see it). Ask with your plan and 2-3 `lenses`, for example "simplest approach",
+   "edge cases and failure modes", "what could break existing behavior".
+3. **Decide** yourself. Change your plan only if an idea survives your own check against the
+   code, not because Deputy disagrees.
+4. **Implement** the change yourself.
+5. **Review** before you say it is done: call `review` with `focus` = what the change should do.
+   It reviews your uncommitted git diff with independent reviewers.
+6. **Adjudicate** every finding: accept, dismiss with a reason, or defer. Run a finding's `REPRO`
+   when it has one. Findings raised by more than one lens are more likely real. Fix what you
+   confirm; tell the user briefly what you dismissed and why.
+
+Skip steps 2 and 5 for trivial changes. They cost time and money.
+
+## Using each tool well
+
+- **consult**: a sharp question with your current plan and context (constraints, what you ruled
+  out). Lenses run in parallel and do not see each other.
+- **review**: by default reviews uncommitted changes against HEAD. Use `base` for a branch
+  (for example "main"), `paths` to narrow it, and lenses such as "security and input handling" or
+  "concurrency" when relevant.
+- **investigate**: for questions that need wide reading. Treat answers as leads and read the cited
+  lines yourself before acting.
+- **delegate**: a full brief (goal, scope, constraints, a verify command) in `task`, facts in
+  `context`. Then read every changed file, check `git diff` and run the tests. After two poor
+  results, stop delegating.
+
+## Rules
+
+- Deputy's output is never proof. Verify against the code before relying on it.
+- Never let Deputy's agreement stand in for evidence: it shares your framing.
+- Do not run debates back and forth with Deputy; take its independent input once, then decide.
+- Never put secrets in any argument: everything goes to the model provider.
+- If the user says "do it yourself", do not use Deputy for that task.

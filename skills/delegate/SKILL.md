@@ -1,35 +1,30 @@
 ---
 name: delegate
-description: Hand well-specified, token-heavy coding work to the Deputy sub-agent (DeepSeek V4.1 Flash) and verify the result yourself. Use for multi-file edits, refactors, tests, boilerplate, migrations, scripts and lint/type fixes, or when the user says "deputy", "delegate" or "/deputy:delegate".
+description: Hand a coding task to the Deputy sub-agent (DeepSeek V4.1 Flash), which edits files and runs commands itself, then verify its work. Use when the user says "deputy do X", "delegate", or "/deputy:delegate". In accuracy mode, only when the user explicitly asks.
 argument-hint: "<task>"
 ---
 
 # Delegate to Deputy
 
-You are the lead. Deputy is a cheaper model with its own tools (read, edit, run commands) in
-this workspace. Use it to save your context and the user's money, never to skip judgment.
+Current Deputy mode: **${user_config.mode}** (if this shows a placeholder, call the `status` tool).
 
-## How to delegate well
+- **accuracy:** write the code yourself. Delegate only because the user asked for it.
+- **balanced:** delegate only low-risk mechanical work (boilerplate, renames, formatting, test
+  scaffolding, repetitive edits). Keep logic and tricky code yourself.
+- **savings:** delegate well-specified coding work; keep design and risky changes yourself.
 
-1. **Decide early.** Delegate before you read lots of source yourself. Use a quick file listing
-   to find the area, not a deep read.
-2. **Write a complete brief** in `task`:
-   - the goal, in one or two sentences;
-   - the files or folders in scope;
-   - constraints (style, APIs to keep, what not to touch);
-   - acceptance criteria, ideally a command to run (tests, build, linter).
-3. **Put facts Deputy cannot discover** into `context`: decisions already made, the error
-   message, conventions from CLAUDE.md, summaries of docs you looked up. Never put secrets there.
-4. Use `thinking: "max"` only for hard tasks; `high` is the default.
-5. **Verify.** Read the changed files listed in the result, check the diff (`git diff`), and run
-   the tests. Fix small problems yourself; for bigger misses, delegate again with precise
-   feedback. After two poor results in a row, stop delegating and do the work yourself.
+## Writing the brief
 
-## Keep for yourself
+Put in `task`: the goal, the files or folders in scope, constraints (what not to touch), and how
+to verify (a test or build command). Put in `context` facts Deputy cannot discover: decisions
+already made, error messages, project conventions. Never include secrets.
 
-Architecture and design decisions, ambiguous root-cause analysis, security-sensitive changes,
-tiny edits (delegation overhead is not worth it), and anything the user asked you to do.
+## After Deputy finishes
+
+Deputy's "done" is a claim, not proof. Read every changed file it lists, check `git diff`, and run
+the tests. Fix small problems yourself. If the result is poor twice in a row, stop delegating and
+do the work yourself.
 
 ## If the user typed a task after the command
 
-Delegate this task now, with a brief built as described above: $ARGUMENTS
+Delegate this task now, following the steps above: $ARGUMENTS

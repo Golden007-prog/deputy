@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "deputy-mcp"
 version = "0.1.0"
-description = "Deputize cheap models. Claude stays the sheriff. MCP server and Claude Code plugin that hands bulk coding work to DeepSeek V4.1 Flash (thinking on) and gets cheap second opinions, while Claude keeps the judgment."
+description = "Deputize cheap models. Claude stays the sheriff. Claude Code plugin and MCP server where DeepSeek V4.1 Flash (thinking on) reviews Claude's changes for bugs, gives second opinions and can take bulk work, while Claude keeps the judgment."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -14,6 +14,7 @@ keywords = [
     "claude-code", "claude", "mcp", "mcp-server", "model-context-protocol", "deepseek",
     "deepseek-v4", "deepinfra", "subagent", "ai-agent", "coding-agent", "llm",
     "cost-optimization", "token-savings", "anthropic", "claude-code-plugin", "agentic-coding",
+    "code-review", "ai-code-review", "second-opinion",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

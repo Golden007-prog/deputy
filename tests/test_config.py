@@ -10,6 +10,7 @@ def test_defaults_use_deepinfra_v41_flash_with_thinking_high(tmp_path: Path):
     assert settings.base_url == DEFAULT_BASE_URL
     assert settings.model == DEFAULT_MODEL == "deepseek-ai/DeepSeek-V4.1-Flash-1017"
     assert settings.effort == "high"
+    assert settings.mode == "accuracy"
     assert settings.api_key == ""
     assert settings.workspace == tmp_path.resolve()
     assert settings.has_prices
@@ -57,3 +58,10 @@ def test_bad_values_raise(tmp_path: Path):
         load_settings({"DEPUTY_MAX_TURNS": "0"}, cwd=tmp_path)
     with pytest.raises(ConfigError):
         load_settings({"DEPUTY_KEEP_REASONING": "maybe"}, cwd=tmp_path)
+    with pytest.raises(ConfigError):
+        load_settings({"DEPUTY_MODE": "yolo"}, cwd=tmp_path)
+
+
+def test_modes(tmp_path: Path):
+    assert load_settings({"DEPUTY_MODE": "Savings"}, cwd=tmp_path).mode == "savings"
+    assert load_settings({"DEPUTY_MODE": "${user_config.mode}"}, cwd=tmp_path).mode == "accuracy"

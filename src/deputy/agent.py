@@ -4,17 +4,20 @@ from __future__ import annotations
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Callable, Literal
 
 from .config import Settings, is_deepseek_api
 from .tools import ToolContext, call_tool, schemas, summarize_changes
 from .workspace import Workspace
 
-Mode = Literal["code", "readonly", "consult"]
+Mode = Literal["code", "readonly", "consult", "review"]
 
 SYSTEM_BASE = """You are Deputy, a careful sub-agent working for a stronger lead agent.
 The lead agent cannot watch you work. It only sees your final message, so make it accurate and short.
 Workspace root: {root}
+Today's date: {today}. Libraries, APIs and model versions newer than your training data exist.
+If you do not recognize one, mark it [unverified] instead of calling it wrong or nonexistent.
 
 Rules:
 - Work only through the tools. Paths are relative to the workspace root.
@@ -47,19 +50,57 @@ UNCERTAIN: what you could not confirm, or "none".""",
 It will treat your ideas as unverified suggestions and make the final decision itself.
 You can read and search files (read-only) to ground your ideas. Favor breadth and non-obvious
 points over generic advice. Disagree with the lead agent's plan if you have a reason to.
+A lens changes what you focus on, not whether you tell the truth: call out bad ideas and
+acknowledge good ones whatever the lens.
 {lens}
 Final message format: a numbered list of 3-7 ideas. For each:
 - IDEA: one sentence.
 - WHY: the reasoning, citing files when relevant.
 - CONFIDENCE: low | medium | high
 Then one line: BIGGEST RISK: ...""",
+    "review": """Mode: REVIEW. You are an adversarial code reviewer. Your job is to break confidence
+in the change in the task (a diff), not to validate it. You can read and search files
+(read-only) to check how the changed code is used.
+{lens}
+Attack surface to consider: wrong logic or off-by-one errors; null, empty, zero and boundary
+inputs; error handling and timeouts; data loss or corruption; retries and idempotency; races and
+stale state; auth and trust boundaries; untrusted input; API, schema or version mismatches with
+callers; behavior changes for existing callers; missing or wrong tests.
+
+Rules:
+- Report only problems you can support with the code. No style nitpicks, no generic advice, no praise.
+- Check each suspicion against the surrounding code before reporting it.
+- Prefer one strong finding over several weak ones.
+- If no substantive problem can be supported, answer "VERDICT: approve" and list what you checked.
+  Inventing issues is worse than missing a minor one.
+
+Final message format:
+VERDICT: approve | needs-attention
+Then one block per finding, most severe first:
+- SEVERITY: critical | major | minor
+- WHERE: path:line
+- WHAT GOES WRONG: one sentence.
+- WHY: why this code path is vulnerable, citing code.
+- IMPACT: what the user or system would experience.
+- REPRO: a command or test that would show it, if you can think of one.
+- FIX: the smallest change that fixes it.
+- CONFIDENCE: low | medium | high""",
 }
 
 CONSULT_HEADER = (
     "SECOND OPINION from {model} (a cheaper model). Treat every item as an unverified "
     "suggestion: weigh it below your own analysis, check it against the code, and adopt "
-    "only what holds up."
+    "only what holds up. Change your plan only when an argument survives your own check, "
+    "not because the helper disagrees."
 )
+REVIEW_HEADER = (
+    "REVIEW by {model} (a cheaper model). These findings are UNVERIFIED and may include "
+    "false positives. The lenses ran independently, so a problem flagged by more than one lens "
+    "is more likely real. Check each finding against the code (run its REPRO when there is "
+    "one), then mark it accept, dismiss (with a reason) or defer, fix only what you confirm, "
+    "and tell the user what you dismissed and why."
+)
+DEFAULT_REVIEW_LENSES = ["correctness and logic bugs", "edge cases, error handling and missing tests"]
 
 
 class DeputyError(RuntimeError):
@@ -214,9 +255,9 @@ def run_agent(
     tool_schemas = schemas(ctx.allow_writes)
 
     mode_prompt = MODE_PROMPTS[mode]
-    if mode == "consult":
+    if mode in ("consult", "review"):
         mode_prompt = mode_prompt.format(lens=f"Lens for this pass: {lens}\n" if lens else "")
-    system = SYSTEM_BASE.format(root=workspace.root) + "\n" + mode_prompt
+    system = SYSTEM_BASE.format(root=workspace.root, today=date.today().isoformat()) + "\n" + mode_prompt
     user = f"TASK:\n{task.strip()}"
     if context and context.strip():
         user += f"\n\nCONTEXT FROM THE LEAD AGENT:\n{context.strip()}"
@@ -278,14 +319,14 @@ def run_agent(
     return result
 
 
-def consult(question: str, settings: Settings, client_factory: Callable[[], Any], *,
-            context: str = "", lenses: list[str] | None = None, effort: str | None = None,
-            max_turns: int = 15) -> tuple[str, Usage, float | None]:
-    """Ask the deputy for ideas, optionally from several angles in parallel."""
+def parallel_passes(task: str, settings: Settings, client_factory: Callable[[], Any], *,
+                    mode: Mode, header: str, context: str = "", lenses: list[str] | None = None,
+                    effort: str | None = None, max_turns: int = 15) -> tuple[str, Usage, float | None]:
+    """Run one read-only pass per lens in parallel and merge the answers under a warning header."""
     lenses = [lens.strip() for lens in (lenses or []) if lens and lens.strip()][:4] or [""]
 
     def one(lens: str) -> RunResult:
-        return run_agent(question, settings, client_factory(), mode="consult", context=context,
+        return run_agent(task, settings, client_factory(), mode=mode, context=context,
                          effort=effort, lens=lens, max_turns=min(max_turns, settings.max_turns))
 
     with ThreadPoolExecutor(max_workers=len(lenses)) as pool:
@@ -294,8 +335,29 @@ def consult(question: str, settings: Settings, client_factory: Callable[[], Any]
     total = Usage()
     for result in results:
         total.merge(result.usage)
-    parts = [CONSULT_HEADER.format(model=settings.model)]
+    parts = [header.format(model=settings.model)]
     for lens, result in zip(lenses, results):
         title = f"Lens: {lens}" if lens else "General"
         parts.append(f"\n=== {title} [{result.stats_line()}] ===\n{result.final_message.strip()}")
     return "\n".join(parts), total, total.cost(settings)
+
+
+def consult(question: str, settings: Settings, client_factory: Callable[[], Any], *,
+            context: str = "", lenses: list[str] | None = None, effort: str | None = None,
+            max_turns: int = 15) -> tuple[str, Usage, float | None]:
+    """Ask the deputy for ideas, optionally from several angles in parallel."""
+    return parallel_passes(question, settings, client_factory, mode="consult", header=CONSULT_HEADER,
+                           context=context, lenses=lenses, effort=effort, max_turns=max_turns)
+
+
+def review(diff: str, settings: Settings, client_factory: Callable[[], Any], *, focus: str = "",
+           lenses: list[str] | None = None, effort: str | None = None,
+           max_turns: int = 20) -> tuple[str, Usage, float | None]:
+    """Have independent reviewers look for defects in a diff, one per lens, in parallel."""
+    task = "Review this change for defects.\n"
+    if focus.strip():
+        task += f"What the change is meant to do, per the lead agent: {focus.strip()}\n"
+    task += f"\nDIFF:\n{diff}"
+    return parallel_passes(task, settings, client_factory, mode="review", header=REVIEW_HEADER,
+                           lenses=lenses or DEFAULT_REVIEW_LENSES, effort=effort,
+                           max_turns=max_turns)

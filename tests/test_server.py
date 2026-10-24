@@ -11,8 +11,18 @@ from conftest import FakeClient, reply
 
 def test_tools_are_registered():
     tools = asyncio.run(server.mcp.list_tools())
-    assert {t.name for t in tools} == {"delegate", "investigate", "consult", "status"}
+    assert {t.name for t in tools} == {"delegate", "investigate", "consult", "review", "status"}
     assert "UNVERIFIED" in next(t for t in tools if t.name == "consult").description
+    assert "UNVERIFIED" in next(t for t in tools if t.name == "review").description
+
+
+def test_instructions_follow_the_mode():
+    accuracy = server.build_instructions("accuracy")
+    assert "Do NOT use `delegate` unless the user explicitly asks" in accuracy
+    assert "call `review`" in accuracy
+    assert "low-risk mechanical work" in server.build_instructions("balanced")
+    assert "`delegate` well-specified coding work" in server.build_instructions("savings")
+    assert server.build_instructions("nonsense") == accuracy
 
 
 def test_missing_key_gives_a_helpful_error(project: Path, monkeypatch):
@@ -28,6 +38,7 @@ def test_status_shows_config_without_the_key(project: Path, monkeypatch):
     monkeypatch.setenv("DEPUTY_WORKSPACE", str(project))
     text = server.status()
     assert "DeepSeek-V4.1-Flash-1017" in text and "thinking: high" in text
+    assert "mode: accuracy" in text and "MODE: ACCURACY" in text
     assert "very-secret-key" not in text
 
 
