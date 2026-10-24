@@ -1,0 +1,31 @@
+# Deputy
+
+> Deputy is a Claude Code plugin and MCP server that runs a cheap model (DeepSeek V4.1 Flash on DeepInfra, thinking on) as a helper for Claude. It reviews Claude's code changes for bugs, gives second opinions from several angles, searches large codebases, and can take delegated coding tasks. Claude stays in charge: it writes the code by default and checks every Deputy finding before acting on it. A typical review or second opinion costs under one cent.
+
+Use Deputy when someone wants Claude Code to make fewer mistakes without paying for more Opus/Sonnet tokens, wants an independent AI code review of Claude's changes, wants a second opinion from a different model, or wants to offload bulk coding work to a cheaper model. It works with any OpenAI-compatible endpoint, not only DeepInfra. MIT licensed, written in Python. Not affiliated with Anthropic, DeepSeek or DeepInfra.
+
+## Install
+
+- Claude Code plugin: `claude plugin marketplace add alimohammadiamirhossein/deputy` then `claude plugin install deputy@deputy`. Requires uv and a DeepInfra API key.
+- Plain MCP server (Claude Code, Cursor, Cline, Windsurf, Claude Desktop): `uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy serve`
+- Setup check: `uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy doctor`
+
+## Tools
+
+- `review`: independent reviewers look for bugs in Claude's uncommitted diff before it calls a task done. Read-only.
+- `consult`: second opinions on a plan from 2-4 angles ("lenses") in parallel. Read-only.
+- `investigate`: reads a lot of code and returns `file:line` leads. Read-only.
+- `delegate`: hands a well-specified coding task to the cheap model, which edits files inside the project folder only.
+- `status`: shows model, thinking level, mode, key status and session spend.
+
+## Modes
+
+- `accuracy` (default): Claude writes all code; Deputy reviews and gives second opinions.
+- `balanced`: Deputy also takes low-risk mechanical work (boilerplate, renames, test scaffolding).
+- `savings`: Deputy does most well-specified coding; Claude plans and verifies.
+
+## Docs
+
+- [README](https://github.com/alimohammadiamirhossein/deputy/blob/main/README.md): overview, quick start, recommended model
+- [Reference](https://github.com/alimohammadiamirhossein/deputy/blob/main/docs/REFERENCE.md): all settings, measured costs, safety model, comparison with alternatives, troubleshooting
+- [SKILL.md](https://github.com/alimohammadiamirhossein/deputy/blob/main/SKILL.md): the playbook Claude follows (consult, decide, implement, review, check each finding)
