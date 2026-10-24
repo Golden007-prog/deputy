@@ -1,22 +1,45 @@
 <div align="center">
 
-<img src=".claude-plugin/icon.png" alt="Deputy sheriff badge logo" width="128" height="128">
+<!-- mcp-name: io.github.alimohammadiamirhossein/deputy -->
+
+<img src="https://raw.githubusercontent.com/alimohammadiamirhossein/deputy/main/.claude-plugin/icon.png" alt="Deputy sheriff badge logo" width="128" height="128">
 
 # Deputy
 
 ### Deputize cheap models. Claude stays the sheriff.
 
-**A Claude Code plugin that gives Claude a cheap second brain: DeepSeek V4.1 Flash reviews
-Claude's code for bugs and offers second opinions, so Claude makes fewer mistakes.**
+**Deputy is a Claude Code plugin and MCP server that has a cheap model, DeepSeek V4.1 Flash, review
+Claude's code for bugs and give second opinions, for under a cent each. Claude keeps writing the
+code.**
 
 [![GitHub stars](https://img.shields.io/github/stars/alimohammadiamirhossein/deputy?style=social)](https://github.com/alimohammadiamirhossein/deputy/stargazers)
 [![CI](https://github.com/alimohammadiamirhossein/deputy/actions/workflows/ci.yml/badge.svg)](https://github.com/alimohammadiamirhossein/deputy/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/deputy-cc.svg)](https://pypi.org/project/deputy-cc/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/alimohammadiamirhossein/deputy/blob/main/LICENSE)
 [![MCP](https://img.shields.io/badge/protocol-MCP-purple.svg)](https://modelcontextprotocol.io/)
 
-**⭐ If Deputy helps you, please [star the repo](https://github.com/alimohammadiamirhossein/deputy/stargazers) so others can find it.**
-
 </div>
+
+```bash
+claude plugin marketplace add alimohammadiamirhossein/deputy
+claude plugin install deputy@deputy
+```
+
+Inside Claude Code the same thing is `/plugin marketplace add alimohammadiamirhossein/deputy`.
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and a
+[DeepInfra API key](#quick-start).
+
+## What it costs (measured)
+
+| Run | Time | Cost |
+|---|---|---|
+| `review`: two reviewers check a change with a planted off-by-one bug (both caught it) | 27 s | **$0.0011** |
+| `consult`: second opinions from 2 angles | 68 s | **$0.0018** |
+| `investigate`: list a project's functions and their tests | 18 s | **$0.0004** |
+| `delegate`: fix a bug, add 3 tests, run pytest until green | 46 s | **$0.0006** |
+
+Measured on a small demo project with thinking `high`. On real projects, expect `consult` and
+`review` to stay under $0.01. Every result shows its real tokens and cost.
 
 ## What it does
 
@@ -29,13 +52,44 @@ run a much cheaper model as a helper inside your project:
 | **`consult`** | Second opinions from 2–4 angles at once, before Claude commits to a plan |
 | **`investigate`** | Reads lots of code and returns `file:line` leads |
 | **`delegate`** | Hands a coding task to the cheap model (off by default; on request, or in savings mode) |
+| **`stats`** | Shows roughly how many tokens and dollars Deputy saved: this session, today, this week, all time |
 
 Claude treats everything Deputy says as an **unverified hint**: it checks each finding against
-the code and keeps only what holds up. A typical review or second opinion costs **under one cent**.
+the code and keeps only what holds up.
 
-> **Real test:** we planted an off-by-one bug in a new `average()` function. Both reviewers caught
-> it independently, each with a runnable repro command and the one-line fix, and flagged the
-> missing tests too. Cost: **$0.0011**, about 27 seconds.
+### See what you saved
+
+Every result ends with a one-line estimate, for example from a real `investigate` run:
+
+```text
+Savings (rough): this work would cost about $0.0082 on Claude Opus 5.5; Deputy did it for $0.0001. Saved about $0.0074 and 2.0k Claude Opus 5.5 tokens.
+```
+
+Ask Claude for `stats`, or run `deputy stats`, for totals. Reviews and second opinions are listed
+separately as extra checks, so they never inflate the savings. The estimate assumes your lead
+model would use about as many tokens, so treat it as an order of magnitude. Only numbers are
+stored, never code or prompts. Set your lead model with `DEPUTY_LEAD_MODEL` (`opus`, `sonnet`,
+`haiku`, `fable` or `custom`).
+
+## When to use Deputy, and when not to
+
+**Use it for:**
+
+- Non-trivial changes where a missed bug costs more than a cent: logic, edge cases, refactors that
+  touch several files.
+- A second opinion before Claude commits to a design, without spending Claude tokens on it.
+- Wide reading in a big codebase, such as "where is this setting read?".
+- Well-specified mechanical work (boilerplate, renames, test scaffolding) in `balanced` or
+  `savings` mode, when you want to save Claude tokens.
+
+**Skip it for:**
+
+- Trivial edits like typos and one-liners. A review takes 30–60 seconds and adds little there.
+- Code you may not share with a third party. Deputy sends code to DeepInfra, or to whatever
+  endpoint you set in `DEPUTY_BASE_URL` (a local model works too).
+- Final answers. Findings come from a weaker model and include false positives, which is why
+  Claude verifies every one.
+- Architecture and security-sensitive decisions in `savings` mode. Keep those with Claude.
 
 ## Quick start
 
@@ -67,6 +121,31 @@ Claude Code asks for your DeepInfra key and stores it in your system's secure st
 
 Or just work normally: Claude consults and reviews on its own for non-trivial tasks.
 
+### Cursor and Codex
+
+One command adds Deputy to the editor's MCP config (with a backup of the old file) and installs
+the playbook as a Cursor rule or Codex skill:
+
+```bash
+uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy setup cursor --project .
+uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy setup codex
+```
+
+Set `DEEPINFRA_API_KEY` in your environment first, then restart the editor. Add `--dry-run` to
+see the changes without writing them. Ready-made files are in
+[integrations/](https://github.com/alimohammadiamirhossein/deputy/tree/main/integrations).
+
+### Other MCP clients (Cline, Windsurf, Claude Desktop)
+
+Deputy is on PyPI as [`deputy-cc`](https://pypi.org/project/deputy-cc/). Add a stdio MCP server
+that runs:
+
+```bash
+uvx deputy-cc serve
+```
+
+with `DEEPINFRA_API_KEY` set in its environment. Check your setup with `uvx deputy-cc doctor`.
+
 ## Recommended model: DeepSeek V4.1 Flash, thinking `high`
 
 The default is `deepseek-ai/DeepSeek-V4.1-Flash-1017` on DeepInfra with thinking set to `high`.
@@ -92,10 +171,14 @@ Change it in the plugin settings (`/plugin`) or with `DEPUTY_MODE`.
 
 ## Learn more
 
-- **[SKILL.md](SKILL.md)**: the playbook Claude follows (consult → decide → implement → review →
-  check each finding). Also works without the plugin.
-- **[docs/REFERENCE.md](docs/REFERENCE.md)**: all settings, costs, safety, terms of service, the
-  research behind the design, troubleshooting and the roadmap.
+- **[SKILL.md](https://github.com/alimohammadiamirhossein/deputy/blob/main/SKILL.md)**: the
+  playbook Claude follows (consult → decide → implement → review → check each finding). Also works
+  without the plugin.
+- **[docs/REFERENCE.md](https://github.com/alimohammadiamirhossein/deputy/blob/main/docs/REFERENCE.md)**:
+  all settings, costs, safety, terms of service, the research behind the design, troubleshooting
+  and the roadmap.
+- **[CHANGELOG.md](https://github.com/alimohammadiamirhossein/deputy/blob/main/CHANGELOG.md)**:
+  what changed in each release.
 
 Deputy stays within Anthropic's rules: Claude Code runs unmodified, and Deputy never touches your
 Claude login. It's an ordinary MCP tool using your own DeepInfra key.
@@ -103,13 +186,16 @@ Claude login. It's an ordinary MCP tool using your own DeepInfra key.
 ## Support the project
 
 If Deputy caught a bug for you, **[give it a ⭐](https://github.com/alimohammadiamirhossein/deputy/stargazers)**
-and share it with someone who uses Claude Code. Issues and pull requests are welcome.
+and share it with someone who uses Claude Code. Issues and pull requests are welcome; the
+[good first issues](https://github.com/alimohammadiamirhossein/deputy/labels/good%20first%20issue)
+are a good place to start.
 
 [![Star History Chart](https://api.star-history.com/svg?repos=alimohammadiamirhossein/deputy&type=Date)](https://star-history.com/#alimohammadiamirhossein/deputy&Date)
 
 ---
 
-[MIT](LICENSE) © 2026 Amirhossein Alimohammadi · Not affiliated with Anthropic, DeepSeek or DeepInfra.
+[MIT](https://github.com/alimohammadiamirhossein/deputy/blob/main/LICENSE) © 2026 Amirhossein
+Alimohammadi · Not affiliated with Anthropic, DeepSeek or DeepInfra.
 
 <sub>Keywords: Claude Code plugin, MCP server, Model Context Protocol, AI code review, second
 opinion, DeepSeek V4.1 Flash, DeepInfra, subagent, Opus, agentic coding, reduce Claude Code cost.</sub>

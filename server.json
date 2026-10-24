@@ -1,0 +1,71 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.alimohammadiamirhossein/deputy",
+  "title": "Deputy",
+  "description": "Claude Code helper: DeepSeek V4.1 Flash reviews Claude's code for bugs and gives second opinions",
+  "repository": {
+    "url": "https://github.com/alimohammadiamirhossein/deputy",
+    "source": "github",
+    "id": "1431818605"
+  },
+  "websiteUrl": "https://github.com/alimohammadiamirhossein/deputy",
+  "version": "0.2.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "deputy-cc",
+      "version": "0.2.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "serve"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "DEEPINFRA_API_KEY",
+          "description": "DeepInfra API key (deepinfra.com, Dashboard > API Keys). Or set DEPUTY_API_KEY for another OpenAI-compatible endpoint.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "DEPUTY_MODE",
+          "description": "accuracy: Claude writes all code and Deputy only reviews and consults. balanced: Deputy also takes mechanical work. savings: Deputy takes most coding work.",
+          "default": "accuracy",
+          "choices": ["accuracy", "balanced", "savings"]
+        },
+        {
+          "name": "DEPUTY_THINKING",
+          "description": "How hard the helper model thinks.",
+          "default": "high",
+          "choices": ["none", "low", "medium", "high", "max"]
+        },
+        {
+          "name": "DEPUTY_MODEL",
+          "description": "Model id served by the endpoint.",
+          "default": "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+        },
+        {
+          "name": "DEPUTY_BASE_URL",
+          "description": "Any OpenAI-compatible endpoint (https, or http on localhost for a local model).",
+          "default": "https://api.deepinfra.com/v1/openai"
+        },
+        {
+          "name": "DEPUTY_WORKSPACE",
+          "description": "Project folder Deputy may read and edit. Defaults to the client's project folder.",
+          "format": "filepath"
+        },
+        {
+          "name": "DEPUTY_API_KEY",
+          "description": "API key for a non-DeepInfra endpoint. Takes precedence over DEEPINFRA_API_KEY.",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

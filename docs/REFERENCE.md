@@ -25,8 +25,13 @@ Everything that is not in the [README](../README.md). For how Claude should use 
 | `review` | `focus`, `diff`, `base`, `paths`, `lenses` (up to 4), `thinking` | No |
 | `investigate` | `question`, `context`, `thinking`, `workdir` | No |
 | `delegate` | `task`, `context`, `thinking`, `workdir` | Yes |
+| `stats` | none | No |
 | `status` | none | No |
 
+- Every tool except `stats` also takes `project_dir`: the project's absolute path, for clients
+  that start Deputy outside the project. Deputy picks the folder in this order: `DEPUTY_WORKSPACE`,
+  `project_dir`, the client's MCP root (Cursor and others report it), Claude Code's project
+  folder, then the current directory.
 - `thinking` is `high` (default) or `max`.
 - `review` without `diff` reviews uncommitted changes (staged and unstaged) against `HEAD`, plus
   untracked files; with `base` it compares against that revision.
@@ -66,6 +71,10 @@ All settings are environment variables. The plugin sets the first four for you.
 | `DEPUTY_COMMAND_TIMEOUT` | `180` | Seconds per shell command |
 | `DEPUTY_KEEP_REASONING` | `true` | Send the model's reasoning back between tool calls |
 | `DEPUTY_PRICE_INPUT` / `_CACHED` / `_OUTPUT` | DeepInfra prices | USD per 1M tokens, for cost estimates |
+| `DEPUTY_LEAD_MODEL` | `opus` | Your main model for the savings estimate: `opus`, `sonnet`, `haiku`, `fable` or `custom` |
+| `DEPUTY_LEAD_PRICE_INPUT` / `_CACHED` / `_OUTPUT` | that model's API price | USD per 1M tokens; required with `custom` (for example a GPT model in Codex) |
+| `DEPUTY_STATS` | `true` | Keep the savings history; `false` counts only the current session |
+| `DEPUTY_DATA_DIR` | plugin data folder, else `~/.deputy` | Where the savings log (`stats.jsonl`) lives |
 
 Deputy never reads `OPENAI_API_KEY`, so a real OpenAI key cannot leak to another provider.
 
@@ -81,18 +90,62 @@ export DEEPINFRA_API_KEY="sk-di-..."   # macOS/Linux, add to ~/.zshrc or ~/.bash
 
 ## Install without the plugin
 
+Deputy is on PyPI as [`deputy-cc`](https://pypi.org/project/deputy-cc/):
+
 ```bash
-claude mcp add deputy -s user -- uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy serve
+claude mcp add deputy -s user -- uvx deputy-cc serve
 ```
 
 Then copy [SKILL.md](../SKILL.md) to `~/.claude/skills/deputy/SKILL.md`. For Cursor, Cline,
-Windsurf or Claude Desktop, add a stdio MCP server with the same `uvx ... deputy serve` command.
+Windsurf or Claude Desktop, add a stdio MCP server with the same `uvx deputy-cc serve` command.
+To run the latest code from GitHub instead, use
+`uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy serve`.
 
 Check your setup (key, endpoint, and that thinking is really on):
 
 ```bash
-uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy doctor
+uvx deputy-cc doctor
 ```
+
+## Cursor and Codex
+
+`deputy setup` edits the editor's config for you. It backs up the old file, never overwrites an
+existing `deputy` entry without `--force`, and never writes your API key into a file.
+
+```bash
+deputy setup cursor --project <dir>   # <dir>/.cursor/mcp.json + .cursor/rules/deputy.mdc
+deputy setup cursor                   # ~/.cursor/mcp.json (uses Cursor's MCP roots for the folder)
+deputy setup codex                    # ~/.codex/config.toml + ~/.agents/skills/deputy/SKILL.md
+deputy setup rules                    # print the playbook, e.g. for Cursor Settings > Rules
+```
+
+Options: `--mode accuracy|balanced|savings`, `--pypi` (run the PyPI package instead of GitHub),
+`--force`, `--dry-run`. Run them with `uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy setup ...`
+if Deputy isn't installed.
+
+- **Cursor** reads `DEEPINFRA_API_KEY` through `${env:DEEPINFRA_API_KEY}`, and in a project config
+  sets `DEPUTY_WORKSPACE` to `${workspaceFolder}`.
+- **Codex** forwards `DEEPINFRA_API_KEY` with `env_vars` and gets `tool_timeout_sec = 1800`, because
+  Codex's default 60-second tool timeout is shorter than most Deputy runs.
+- Copy-paste versions of all four files are in [integrations/](../integrations/).
+
+## Savings estimate
+
+After each run Deputy appends one line, and `stats` (or `deputy stats`) shows totals for the
+session, today, the last 7 days and all time.
+
+- **Replaced work** (`delegate`, `investigate`): what your lead model would have paid for the same
+  tokens (uncached input, cached input and output at its API price), minus what Deputy cost, minus
+  what the lead pays to read Deputy's report (about 4 characters per token).
+- **Extra checks** (`consult`, `review`): shown separately as "Deputy cost vs. the same check on the
+  lead", and never counted as savings, because without Deputy those checks usually wouldn't run.
+- It assumes the lead would use about as many tokens as Deputy did. Tokenizers and working styles
+  differ, so read it as an order of magnitude. On a subscription, the dollars are API-equivalent.
+- The log stores numbers only (time, tool, token counts, costs), never code or prompts.
+
+Lead prices (Anthropic API, October 2026): Opus 5.5 $4 / $0.20 cached / $20 out; Sonnet 5.5
+$2 / $0.20 / $10; Haiku 5.5 $0.10 / $0.01 (assumed) / $0.50; Fable 5.1 $10 / $0.25 / $50, per 1M
+tokens.
 
 ## Costs
 
@@ -183,8 +236,9 @@ Claude is a trademark of Anthropic, PBC; DeepSeek is a trademark of its owner.
 - [ ] Optional review gate: review the diff automatically when Claude finishes a turn (Stop hook)
 - [ ] Follow-up threads, so Claude can question a reviewer about one finding
 - [ ] Background jobs with progress, steering and cancel
-- [ ] Benchmarks: accuracy and cost with and without Deputy on real tasks
-- [ ] PyPI release
+- [ ] Benchmarks: accuracy and cost with and without Deputy on real tasks (harness in
+  [bench/](../bench/), results to come)
+- [x] PyPI release (`deputy-cc`)
 
 ## Contributing
 

@@ -7,8 +7,9 @@ Use Deputy when someone wants Claude Code to make fewer mistakes without paying 
 ## Install
 
 - Claude Code plugin: `claude plugin marketplace add alimohammadiamirhossein/deputy` then `claude plugin install deputy@deputy`. Requires uv and a DeepInfra API key.
-- Plain MCP server (Claude Code, Cursor, Cline, Windsurf, Claude Desktop): `uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy serve`
-- Setup check: `uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy doctor`
+- Plain MCP server (Claude Code, Cursor, Cline, Windsurf, Claude Desktop): `uvx deputy-cc serve` (PyPI package `deputy-cc`), or `uvx --from git+https://github.com/alimohammadiamirhossein/deputy deputy serve` for the latest code from GitHub.
+- Cursor and Codex: `deputy setup cursor --project .` or `deputy setup codex` adds Deputy to the editor's MCP config and installs the playbook as a Cursor rule or Codex skill.
+- Setup check: `uvx deputy-cc doctor`
 
 ## Tools
 
@@ -17,6 +18,7 @@ Use Deputy when someone wants Claude Code to make fewer mistakes without paying 
 - `investigate`: reads a lot of code and returns `file:line` leads. Read-only.
 - `delegate`: hands a well-specified coding task to the cheap model, which edits files inside the project folder only.
 - `status`: shows model, thinking level, mode, key status and session spend.
+- `stats`: rough tokens and dollars saved for the session, today, the last 7 days and all time. Reviews and second opinions count as extra checks, never as savings. Also `deputy stats` on the command line.
 
 ## Modes
 
@@ -24,8 +26,20 @@ Use Deputy when someone wants Claude Code to make fewer mistakes without paying 
 - `balanced`: Deputy also takes low-risk mechanical work (boilerplate, renames, test scaffolding).
 - `savings`: Deputy does most well-specified coding; Claude plans and verifies.
 
+## When not to use Deputy
+
+- Trivial edits such as typos and one-liners: a review takes 30-60 seconds and adds little.
+- Code that may not be sent to a third-party provider, unless `DEPUTY_BASE_URL` points at a local model.
+- As a final authority: findings come from a weaker model and include false positives, so Claude verifies each one.
+
+## Measured costs
+
+DeepSeek V4.1 Flash on DeepInfra, thinking `high`, small demo project: `review` with two reviewers $0.0011 in 27 s (both caught a planted off-by-one bug), `consult` with 2 lenses $0.0018, `investigate` $0.0004, `delegate` (fix a bug, add 3 tests, run pytest) $0.0006. Model price: $0.098 per 1M input tokens and $0.294 per 1M output tokens (October 2026).
+
 ## Docs
 
 - [README](https://github.com/alimohammadiamirhossein/deputy/blob/main/README.md): overview, quick start, recommended model
 - [Reference](https://github.com/alimohammadiamirhossein/deputy/blob/main/docs/REFERENCE.md): all settings, measured costs, safety model, comparison with alternatives, troubleshooting
 - [SKILL.md](https://github.com/alimohammadiamirhossein/deputy/blob/main/SKILL.md): the playbook Claude follows (consult, decide, implement, review, check each finding)
+- [CHANGELOG.md](https://github.com/alimohammadiamirhossein/deputy/blob/main/CHANGELOG.md): release history
+- [PyPI: deputy-cc](https://pypi.org/project/deputy-cc/)

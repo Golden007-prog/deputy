@@ -3,9 +3,9 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "deputy-mcp"
-version = "0.1.0"
-description = "Deputize cheap models. Claude stays the sheriff. Claude Code plugin and MCP server where DeepSeek V4.1 Flash (thinking on) reviews Claude's changes for bugs, gives second opinions and can take bulk work, while Claude keeps the judgment."
+name = "deputy-cc"
+version = "0.2.0"
+description = "Claude Code plugin and MCP server that has a cheap model, DeepSeek V4.1 Flash, review Claude's code for bugs and give second opinions, for under a cent each. Claude keeps writing the code."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -40,11 +40,13 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 deputy = "deputy.cli:main"
+deputy-cc = "deputy.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/alimohammadiamirhossein/deputy"
 Repository = "https://github.com/alimohammadiamirhossein/deputy"
 Issues = "https://github.com/alimohammadiamirhossein/deputy/issues"
+Changelog = "https://github.com/alimohammadiamirhossein/deputy/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/deputy"]

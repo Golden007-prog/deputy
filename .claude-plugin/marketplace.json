@@ -1,6 +1,6 @@
 {
   "name": "deputy",
-  "description": "Deputy: hand bulk coding work to cheap models while Claude stays the lead.",
+  "description": "Deputy: a cheap model reviews Claude's code for bugs and gives second opinions, while Claude stays the lead.",
   "owner": {
     "name": "Amirhossein Alimohammadi",
     "url": "https://github.com/alimohammadiamirhossein"
@@ -9,7 +9,7 @@
     {
       "name": "deputy",
       "source": "./",
-      "description": "Delegate coding, investigation and second opinions to DeepSeek V4.1 Flash (thinking on) via DeepInfra. Claude plans, decides and verifies."
+      "description": "DeepSeek V4.1 Flash reviews Claude's code for bugs, gives second opinions and searches code, for under a cent each. Claude keeps writing the code; an optional savings mode delegates coding work."
     }
   ]
 }

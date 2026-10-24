@@ -1,8 +1,8 @@
 {
   "name": "deputy",
   "displayName": "Deputy",
-  "version": "0.1.0",
-  "description": "Deputize cheap models. Claude stays the sheriff. DeepSeek V4.1 Flash (thinking on) gives Claude second opinions, reviews its changes for bugs, and can take bulk work, while Claude decides and verifies.",
+  "version": "0.2.0",
+  "description": "Deputize cheap models. Claude stays the sheriff. A cheap model, DeepSeek V4.1 Flash, reviews Claude's code for bugs and gives second opinions, for under a cent each. Claude keeps writing the code; an optional savings mode delegates coding work.",
   "author": {
     "name": "Amirhossein Alimohammadi",
     "url": "https://github.com/alimohammadiamirhossein"
@@ -20,6 +20,7 @@
         "DEPUTY_API_KEY": "${user_config.deepinfra_api_key}",
         "DEPUTY_THINKING": "${user_config.thinking}",
         "DEPUTY_MODE": "${user_config.mode}",
+        "DEPUTY_LEAD_MODEL": "${user_config.lead_model}",
         "DEPUTY_WORKSPACE": "${CLAUDE_PROJECT_DIR}"
       }
     }
@@ -44,6 +45,13 @@
       "description": "How hard DeepSeek thinks. high is the recommended default; max is slower and costs more.",
       "options": ["high", "max"],
       "default": "high"
+    },
+    "lead_model": {
+      "type": "string",
+      "title": "Your Claude model (for the savings estimate)",
+      "description": "Which Claude model you usually run. Deputy prices its savings estimate against it.",
+      "options": ["opus", "sonnet", "haiku", "fable"],
+      "default": "opus"
     }
   }
 }
