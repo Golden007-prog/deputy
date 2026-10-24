@@ -1,0 +1,15 @@
+{
+  "name": "deputy",
+  "description": "Deputy: hand bulk coding work to cheap models while Claude stays the lead.",
+  "owner": {
+    "name": "Amirhossein Alimohammadi",
+    "url": "https://github.com/alimohammadiamirhossein"
+  },
+  "plugins": [
+    {
+      "name": "deputy",
+      "source": "./",
+      "description": "Delegate coding, investigation and second opinions to DeepSeek V4.1 Flash (thinking on) via DeepInfra. Claude plans, decides and verifies."
+    }
+  ]
+}

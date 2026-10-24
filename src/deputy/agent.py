@@ -1,0 +1,301 @@
+"""The deputy's agent loop: an OpenAI-compatible tool-calling loop in the workspace."""
+from __future__ import annotations
+
+import time
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from typing import Any, Callable, Literal
+
+from .config import Settings, is_deepseek_api
+from .tools import ToolContext, call_tool, schemas, summarize_changes
+from .workspace import Workspace
+
+Mode = Literal["code", "readonly", "consult"]
+
+SYSTEM_BASE = """You are Deputy, a careful sub-agent working for a stronger lead agent.
+The lead agent cannot watch you work. It only sees your final message, so make it accurate and short.
+Workspace root: {root}
+
+Rules:
+- Work only through the tools. Paths are relative to the workspace root.
+- Read before you change anything. Keep changes minimal and focused on the task.
+- Never claim something you did not check. If you could not do something, say so plainly.
+- Do not read secrets or credential files, and do not touch files unrelated to the task.
+- Never change anything outside the workspace: do not install packages globally or for the
+  user, and do not edit system or user config. If a tool or dependency is missing, say so in
+  your report instead of installing it, unless the task explicitly asks you to install it.
+"""
+
+MODE_PROMPTS = {
+    "code": """Mode: CODE. You can create and edit files and run commands.
+- Meet the task's acceptance criteria. Run the relevant tests, build or linter when the project has one.
+- Stop when the task is done. Do not start unrelated improvements.
+
+Final message format:
+RESULT: done | partial | failed
+SUMMARY: 2-5 sentences on what you changed and why.
+VERIFY: the commands you ran and their outcome, or what the lead agent should check.
+OPEN ISSUES: anything unfinished, risky or uncertain, or "none".""",
+    "readonly": """Mode: READ-ONLY. You can list, read and search files. You cannot change anything.
+Answer with specific evidence. The lead agent pays to read your answer, so be concise.
+
+Final message format:
+ANSWER: the direct answer.
+EVIDENCE: bullets of path:line references, each with a one-line note.
+UNCERTAIN: what you could not confirm, or "none".""",
+    "consult": """Mode: CONSULT. The lead agent wants ideas, risks and alternatives it may have missed.
+It will treat your ideas as unverified suggestions and make the final decision itself.
+You can read and search files (read-only) to ground your ideas. Favor breadth and non-obvious
+points over generic advice. Disagree with the lead agent's plan if you have a reason to.
+{lens}
+Final message format: a numbered list of 3-7 ideas. For each:
+- IDEA: one sentence.
+- WHY: the reasoning, citing files when relevant.
+- CONFIDENCE: low | medium | high
+Then one line: BIGGEST RISK: ...""",
+}
+
+CONSULT_HEADER = (
+    "SECOND OPINION from {model} (a cheaper model). Treat every item as an unverified "
+    "suggestion: weigh it below your own analysis, check it against the code, and adopt "
+    "only what holds up."
+)
+
+
+class DeputyError(RuntimeError):
+    """A run could not start or the provider failed in a way the model cannot fix."""
+
+
+@dataclass
+class Usage:
+    requests: int = 0
+    prompt: int = 0
+    cached: int = 0
+    completion: int = 0
+    reasoning: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.prompt + self.completion
+
+    def add(self, usage: Any) -> None:
+        self.requests += 1
+        if usage is None:
+            return
+        self.prompt += int(getattr(usage, "prompt_tokens", 0) or 0)
+        self.completion += int(getattr(usage, "completion_tokens", 0) or 0)
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        self.cached += int(getattr(prompt_details, "cached_tokens", 0) or 0)
+        completion_details = getattr(usage, "completion_tokens_details", None)
+        self.reasoning += int(getattr(completion_details, "reasoning_tokens", 0) or 0)
+
+    def merge(self, other: "Usage") -> None:
+        for name in ("requests", "prompt", "cached", "completion", "reasoning"):
+            setattr(self, name, getattr(self, name) + getattr(other, name))
+
+    def cost(self, settings: Settings) -> float | None:
+        if not settings.has_prices:
+            return None
+        cached = min(self.cached, self.prompt)
+        return ((self.prompt - cached) * settings.price_input + cached * settings.price_cached
+                + self.completion * settings.price_output) / 1_000_000
+
+
+@dataclass
+class RunResult:
+    mode: str
+    status: str  # completed | max_turns | budget | timeout | truncated
+    final_message: str
+    turns: int
+    seconds: float
+    usage: Usage
+    model: str
+    effort: str
+    files_changed: list[dict] = field(default_factory=list)
+    commands: list[dict] = field(default_factory=list)
+    cost: float | None = None
+
+    def stats_line(self) -> str:
+        u = self.usage
+        cost = f" | est. cost ${self.cost:.4f}" if self.cost is not None else ""
+        return (f"{self.status} | {self.turns} turns | {self.seconds:.0f}s | "
+                f"{u.prompt:,} in ({u.cached:,} cached), {u.completion:,} out "
+                f"({u.reasoning:,} thinking){cost}")
+
+    def to_text(self) -> str:
+        lines = [f"Deputy {self.mode} run [{self.model}, thinking {self.effort}]: {self.stats_line()}"]
+        if self.status != "completed":
+            lines.append(f"WARNING: the run ended early ({self.status}). Treat the report as incomplete.")
+        if self.files_changed:
+            lines.append("Files changed (review these before relying on them):")
+            marks = {"created": "A", "modified": "M", "deleted": "D"}
+            for row in self.files_changed:
+                lines.append(f"  {marks[row['status']]} {row['path']} (+{row['added']} -{row['removed']})")
+        if self.commands:
+            shown = "; ".join(f"`{c['command']}` -> {c['exit']}" for c in self.commands[-8:])
+            lines.append(f"Commands run ({len(self.commands)}): {shown}")
+            lines.append("Note: commands may also have changed files that are not listed above.")
+        lines.append("--- Deputy's report ---")
+        lines.append(self.final_message.strip() or "(empty report)")
+        return "\n".join(lines)
+
+
+def build_request(settings: Settings, effort: str, messages: list[dict],
+                  tool_schemas: list[dict]) -> dict:
+    request: dict[str, Any] = {
+        "model": settings.model,
+        "messages": messages,
+        "max_tokens": settings.max_output_tokens,
+    }
+    if tool_schemas:
+        request["tools"] = tool_schemas
+    if is_deepseek_api(settings.base_url):
+        # DeepSeek's own API switches thinking with a separate field.
+        request["extra_body"] = {"thinking": {"type": "disabled" if effort == "none" else "enabled"}}
+        if effort != "none":
+            request["reasoning_effort"] = effort
+    else:
+        # DeepInfra and other OpenAI-compatible hosts: thinking is OFF unless asked for.
+        request["reasoning_effort"] = effort
+    return request
+
+
+def _complete(client: Any, request: dict, deadline: float) -> Any:
+    import openai
+
+    delays = (2, 6, 15)
+    for attempt in range(len(delays) + 1):
+        try:
+            return client.chat.completions.create(**request)
+        except openai.AuthenticationError:
+            raise DeputyError("the provider rejected the API key (check DEPUTY_API_KEY / "
+                              "DEEPINFRA_API_KEY)") from None
+        except openai.NotFoundError:
+            raise DeputyError(f"the provider does not know the model {request['model']!r}") from None
+        except openai.BadRequestError as exc:
+            raise DeputyError(f"the provider rejected the request: {exc}") from None
+        except (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError) as exc:
+            if attempt == len(delays) or time.monotonic() + delays[attempt] > deadline:
+                raise DeputyError(f"the provider is unavailable: {exc}") from None
+            time.sleep(delays[attempt])
+    raise AssertionError("unreachable")
+
+
+def _reasoning_of(message: Any) -> str | None:
+    for name in ("reasoning_content", "reasoning"):
+        value = getattr(message, name, None)
+        if isinstance(value, str) and value:
+            return value
+    extra = getattr(message, "model_extra", None) or {}
+    value = extra.get("reasoning_content")
+    return value if isinstance(value, str) and value else None
+
+
+def run_agent(
+    task: str,
+    settings: Settings,
+    client: Any,
+    *,
+    mode: Mode = "code",
+    context: str = "",
+    effort: str | None = None,
+    workdir: str = ".",
+    lens: str = "",
+    max_turns: int | None = None,
+    progress: Callable[[int, str], None] | None = None,
+) -> RunResult:
+    if not task or not task.strip():
+        raise DeputyError("task must not be empty")
+    effort = effort or settings.effort
+    root = Workspace(settings.workspace)
+    workspace = Workspace(root.resolve(workdir)) if workdir not in ("", ".") else root
+    ctx = ToolContext(workspace=workspace, command_timeout=settings.command_timeout,
+                      allow_writes=(mode == "code"))
+    tool_schemas = schemas(ctx.allow_writes)
+
+    mode_prompt = MODE_PROMPTS[mode]
+    if mode == "consult":
+        mode_prompt = mode_prompt.format(lens=f"Lens for this pass: {lens}\n" if lens else "")
+    system = SYSTEM_BASE.format(root=workspace.root) + "\n" + mode_prompt
+    user = f"TASK:\n{task.strip()}"
+    if context and context.strip():
+        user += f"\n\nCONTEXT FROM THE LEAD AGENT:\n{context.strip()}"
+    messages: list[dict] = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    usage = Usage()
+    started = time.monotonic()
+    deadline = started + settings.run_timeout
+    limit = max_turns or settings.max_turns
+    status, final, turns = "max_turns", "", 0
+
+    for turns in range(1, limit + 1):
+        if time.monotonic() > deadline:
+            status = "timeout"
+            break
+        if usage.total >= settings.max_run_tokens:
+            status = "budget"
+            break
+        response = _complete(client, build_request(settings, effort, messages, tool_schemas), deadline)
+        usage.add(getattr(response, "usage", None))
+        choice = response.choices[0]
+        message = choice.message
+        content = message.content or ""
+        calls = list(message.tool_calls or [])
+
+        assistant: dict[str, Any] = {"role": "assistant", "content": content}
+        if calls:
+            assistant["tool_calls"] = [
+                {"id": c.id, "type": "function",
+                 "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
+                for c in calls
+            ]
+            # DeepSeek's thinking mode expects its reasoning to be sent back while a
+            # tool-calling turn is still in progress.
+            reasoning = _reasoning_of(message)
+            if settings.keep_reasoning and reasoning:
+                assistant["reasoning_content"] = reasoning
+        messages.append(assistant)
+
+        if not calls:
+            final = content
+            status = "truncated" if getattr(choice, "finish_reason", "") == "length" else "completed"
+            break
+
+        for call in calls:
+            if progress:
+                progress(turns, call.function.name)
+            output = call_tool(ctx, call.function.name, call.function.arguments)
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": output})
+        if content:
+            final = content  # keep the latest commentary in case the run stops early
+
+    result = RunResult(
+        mode=mode, status=status, final_message=final, turns=turns,
+        seconds=time.monotonic() - started, usage=usage, model=settings.model, effort=effort,
+        files_changed=summarize_changes(ctx), commands=ctx.commands,
+    )
+    result.cost = usage.cost(settings)
+    return result
+
+
+def consult(question: str, settings: Settings, client_factory: Callable[[], Any], *,
+            context: str = "", lenses: list[str] | None = None, effort: str | None = None,
+            max_turns: int = 15) -> tuple[str, Usage, float | None]:
+    """Ask the deputy for ideas, optionally from several angles in parallel."""
+    lenses = [lens.strip() for lens in (lenses or []) if lens and lens.strip()][:4] or [""]
+
+    def one(lens: str) -> RunResult:
+        return run_agent(question, settings, client_factory(), mode="consult", context=context,
+                         effort=effort, lens=lens, max_turns=min(max_turns, settings.max_turns))
+
+    with ThreadPoolExecutor(max_workers=len(lenses)) as pool:
+        results = list(pool.map(one, lenses))
+
+    total = Usage()
+    for result in results:
+        total.merge(result.usage)
+    parts = [CONSULT_HEADER.format(model=settings.model)]
+    for lens, result in zip(lenses, results):
+        title = f"Lens: {lens}" if lens else "General"
+        parts.append(f"\n=== {title} [{result.stats_line()}] ===\n{result.final_message.strip()}")
+    return "\n".join(parts), total, total.cost(settings)

@@ -1,0 +1,41 @@
+{
+  "name": "deputy",
+  "displayName": "Deputy",
+  "version": "0.1.0",
+  "description": "Deputize cheap models. Claude stays the sheriff. Hand bulk coding work, big reads and second opinions to DeepSeek V4.1 Flash (thinking on) while Claude plans, decides and verifies.",
+  "author": {
+    "name": "Amirhossein Alimohammadi",
+    "url": "https://github.com/alimohammadiamirhossein"
+  },
+  "homepage": "https://github.com/alimohammadiamirhossein/deputy",
+  "repository": "https://github.com/alimohammadiamirhossein/deputy",
+  "license": "MIT",
+  "icon": "./.claude-plugin/icon.png",
+  "keywords": ["subagent", "deepseek", "deepinfra", "mcp", "cost-optimization", "token-savings", "second-opinion", "coding-agent"],
+  "mcpServers": {
+    "deputy": {
+      "command": "uvx",
+      "args": ["--from", "${CLAUDE_PLUGIN_ROOT}", "deputy", "serve"],
+      "env": {
+        "DEPUTY_API_KEY": "${user_config.deepinfra_api_key}",
+        "DEPUTY_THINKING": "${user_config.thinking}",
+        "DEPUTY_WORKSPACE": "${CLAUDE_PROJECT_DIR}"
+      }
+    }
+  },
+  "userConfig": {
+    "deepinfra_api_key": {
+      "type": "string",
+      "title": "DeepInfra API key",
+      "description": "Your key from deepinfra.com (Dashboard > API Keys). Stored in your system's secure storage. Leave empty to use the DEEPINFRA_API_KEY environment variable instead.",
+      "sensitive": true
+    },
+    "thinking": {
+      "type": "string",
+      "title": "Thinking level",
+      "description": "How hard DeepSeek thinks. high is the recommended default; max is slower and costs more.",
+      "options": ["high", "max"],
+      "default": "high"
+    }
+  }
+}
