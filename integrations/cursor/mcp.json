@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "deputy": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/alimohammadiamirhossein/deputy",
+        "deputy",
+        "serve"
+      ],
+      "env": {
+        "DEEPINFRA_API_KEY": "${env:DEEPINFRA_API_KEY}",
+        "DEPUTY_MODE": "accuracy",
+        "DEPUTY_WORKSPACE": "${workspaceFolder}"
+      }
+    }
+  }
+}

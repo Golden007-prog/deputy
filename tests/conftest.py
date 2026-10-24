@@ -45,6 +45,17 @@ class FakeClient:
         return self.responses.pop(0)
 
 
+@pytest.fixture(autouse=True)
+def isolated_data_dir(tmp_path: Path, monkeypatch):
+    """Keep the savings log of every test out of the user's real ~/.deputy folder."""
+    from deputy import server
+
+    monkeypatch.setenv("DEPUTY_DATA_DIR", str(tmp_path / "deputy-data"))
+    monkeypatch.delenv("CLAUDE_PLUGIN_DATA", raising=False)
+    monkeypatch.delenv("DEPUTY_LEAD_MODEL", raising=False)
+    server._session_records.clear()  # each test starts a fresh "session"
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     root = tmp_path / "project"
@@ -56,4 +67,5 @@ def project(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def settings(project: Path):
-    return load_settings({"DEPUTY_API_KEY": "test-key", "DEPUTY_WORKSPACE": str(project)})
+    return load_settings({"DEPUTY_API_KEY": "test-key", "DEPUTY_WORKSPACE": str(project),
+                          "DEPUTY_DATA_DIR": str(project.parent / "deputy-data")})

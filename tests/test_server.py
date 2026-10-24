@@ -11,7 +11,10 @@ from conftest import FakeClient, reply
 
 def test_tools_are_registered():
     tools = asyncio.run(server.mcp.list_tools())
-    assert {t.name for t in tools} == {"delegate", "investigate", "consult", "review", "status"}
+    assert {t.name for t in tools} == {"delegate", "investigate", "consult", "review", "status",
+                                       "stats"}
+    for tool in tools:  # the injected MCP context must never leak into the tool schema
+        assert "ctx" not in tool.inputSchema.get("properties", {})
     assert "UNVERIFIED" in next(t for t in tools if t.name == "consult").description
     assert "UNVERIFIED" in next(t for t in tools if t.name == "review").description
 
@@ -36,7 +39,7 @@ def test_missing_key_gives_a_helpful_error(project: Path, monkeypatch):
 def test_status_shows_config_without_the_key(project: Path, monkeypatch):
     monkeypatch.setenv("DEPUTY_API_KEY", "very-secret-key")
     monkeypatch.setenv("DEPUTY_WORKSPACE", str(project))
-    text = server.status()
+    text = asyncio.run(server.status())
     assert "DeepSeek-V4.1-Flash-1017" in text and "thinking: high" in text
     assert "mode: accuracy" in text and "MODE: ACCURACY" in text
     assert "very-secret-key" not in text
@@ -50,3 +53,30 @@ def test_delegate_end_to_end_with_fake_provider(project: Path, monkeypatch):
     text = asyncio.run(server.delegate("say done", thinking="max"))
     assert "RESULT: done" in text and "thinking max" in text
     assert fake.requests[0]["reasoning_effort"] == "max"
+    assert "Savings (rough)" in text and "Claude Opus 5.5" in text
+    assert "| This session | 1 |" in server.stats_report()
+
+
+def test_project_dir_picks_the_workspace_unless_pinned(project: Path, tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("DEPUTY_API_KEY", "k")
+    monkeypatch.delenv("DEPUTY_WORKSPACE", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    fake = FakeClient([reply("ANSWER: ok")])
+    monkeypatch.setattr(server, "make_client", lambda settings: fake)
+    asyncio.run(server.investigate("what is here?", project_dir=str(project)))
+    assert str(project) in fake.requests[0]["messages"][0]["content"]
+    assert f"workspace: {project}" in asyncio.run(server.status(project_dir=str(project)))
+    other = tmp_path / "other"
+    other.mkdir()
+    monkeypatch.setenv("DEPUTY_WORKSPACE", str(other))  # an explicit pin wins
+    assert f"workspace: {other}" in asyncio.run(server.status(project_dir=str(project)))
+
+
+def test_file_uris_become_paths():
+    import os
+
+    if os.name == "nt":
+        assert server._uri_to_path("file:///C:/Users/me/app") == Path("C:/Users/me/app")
+    else:
+        assert server._uri_to_path("file:///home/me/my%20app") == Path("/home/me/my app")
+    assert server._uri_to_path("https://example.com") is None

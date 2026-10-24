@@ -10,7 +10,12 @@ extra eyes. Use it to be **more accurate**, never to skip your own judgment.
 
 > Using the Claude Code plugin? You already have this as `/deputy:consult`, `/deputy:review`,
 > `/deputy:investigate` and `/deputy:delegate`. Without the plugin, copy this file to
-> `~/.claude/skills/deputy/SKILL.md`.
+> `~/.claude/skills/deputy/SKILL.md`. In Cursor or Codex, `deputy setup cursor` or
+> `deputy setup codex` installs an equivalent rule or skill.
+
+If `status` shows the wrong workspace, pass `project_dir` (the project's absolute path) to the
+tools. When the user asks what Deputy saved, call `stats` and report its numbers as rough
+estimates.
 
 ## The mode decides who writes code
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from pathlib import Path
 
 from . import __version__
 from .config import ConfigError, load_settings
@@ -60,6 +61,27 @@ def doctor() -> int:
     return 0
 
 
+def run_setup(args: argparse.Namespace) -> int:
+    from . import setup
+
+    try:
+        if args.target == "cursor":
+            notes = setup.setup_cursor(args.project, pypi=args.pypi, mode=args.mode,
+                                       force=args.force, dry_run=args.dry_run)
+        elif args.target == "codex":
+            notes = setup.setup_codex(pypi=args.pypi, mode=args.mode, force=args.force,
+                                      dry_run=args.dry_run)
+        elif args.target == "rules":
+            notes = [setup.agent_rules(args.mode)]
+        else:
+            notes = setup.claude_instructions()
+    except (setup.SetupError, OSError) as exc:
+        print(f"[fail] {exc}")
+        return 1
+    print("\n".join(notes))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -70,12 +92,33 @@ def main(argv: list[str] | None = None) -> int:
         prog="deputy", description="Deputize cheap models. Claude stays the sheriff.")
     parser.add_argument("--version", action="version", version=f"deputy {__version__}")
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("serve", help="run the MCP server over stdio (what Claude Code starts)")
+    sub.add_parser("serve", help="run the MCP server over stdio (what your editor starts)")
     sub.add_parser("doctor", help="check your key, the model, and that thinking is on")
+    sub.add_parser("stats", help="show rough tokens and money saved")
+    setup = sub.add_parser("setup", help="add Deputy to Cursor, Codex or Claude Code")
+    setup.add_argument("target", choices=["cursor", "codex", "claude", "rules"])
+    setup.add_argument("--project", type=Path, help="Cursor: configure this project folder "
+                       "(adds .cursor/mcp.json and a rule) instead of ~/.cursor/mcp.json")
+    setup.add_argument("--mode", default="accuracy", choices=["accuracy", "balanced", "savings"])
+    setup.add_argument("--pypi", action="store_true", help="run the PyPI package instead of GitHub")
+    setup.add_argument("--force", action="store_true", help="replace an existing Deputy entry")
+    setup.add_argument("--dry-run", action="store_true", help="show the changes without writing")
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
         return doctor()
+    if args.command == "stats":
+        from . import stats
+        from .config import ConfigError, load_settings
+
+        try:
+            print(stats.report(load_settings(), []))
+        except ConfigError as exc:
+            print(f"configuration error: {exc}")
+            return 1
+        return 0
+    if args.command == "setup":
+        return run_setup(args)
     from .server import main as serve
 
     serve()

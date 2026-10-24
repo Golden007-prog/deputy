@@ -33,6 +33,17 @@ KNOWN_PRICES = {
 
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
+# Lead models for the savings estimate: (display name, USD per 1M input, cached input, output).
+# Anthropic first-party API list prices, October 2026. Haiku's cached price is an assumption
+# (10% of input). Override with DEPUTY_LEAD_PRICE_INPUT / _CACHED / _OUTPUT.
+LEAD_MODELS = {
+    "opus": ("Claude Opus 5.5", 4.0, 0.20, 20.0),
+    "sonnet": ("Claude Sonnet 5.5", 2.0, 0.20, 10.0),
+    "haiku": ("Claude Haiku 5.5", 0.10, 0.01, 0.50),
+    "fable": ("Claude Fable 5.1", 10.0, 0.25, 50.0),
+}
+DEFAULT_LEAD = "opus"
+
 
 class ConfigError(RuntimeError):
     """Raised when the environment holds an invalid setting."""
@@ -121,6 +132,12 @@ class Settings:
     price_input: float
     price_cached: float
     price_output: float
+    lead_name: str = "Claude Opus 5.5"
+    lead_price_input: float = 4.0
+    lead_price_cached: float = 0.20
+    lead_price_output: float = 20.0
+    stats_enabled: bool = True
+    data_dir: Path = field(default_factory=lambda: Path.home() / ".deputy")
 
     @property
     def has_prices(self) -> bool:
@@ -148,6 +165,32 @@ def read_mode(env: Mapping[str, str] | None = None) -> str:
     return mode
 
 
+def workspace_pinned(env: Mapping[str, str] | None = None) -> bool:
+    """True when the user fixed the workspace explicitly with DEPUTY_WORKSPACE."""
+    return bool(_get(os.environ if env is None else env, "DEPUTY_WORKSPACE"))
+
+
+def _lead(env: Mapping[str, str]) -> tuple[str, float, float, float]:
+    key = (_get(env, "DEPUTY_LEAD_MODEL") or DEFAULT_LEAD).lower()
+    if key in LEAD_MODELS:
+        name, p_in, p_cached, p_out = LEAD_MODELS[key]
+    elif key == "custom":
+        name, p_in, p_cached, p_out = "your lead model", 0.0, 0.0, 0.0
+    else:
+        raise ConfigError(f"DEPUTY_LEAD_MODEL must be one of {', '.join([*LEAD_MODELS, 'custom'])}")
+    return (name, _float(env, "DEPUTY_LEAD_PRICE_INPUT", p_in),
+            _float(env, "DEPUTY_LEAD_PRICE_CACHED", p_cached),
+            _float(env, "DEPUTY_LEAD_PRICE_OUTPUT", p_out))
+
+
+def _data_dir(env: Mapping[str, str]) -> Path:
+    for name in ("DEPUTY_DATA_DIR", "CLAUDE_PLUGIN_DATA"):
+        value = _get(env, name)
+        if value:
+            return Path(value).expanduser()
+    return Path.home() / ".deputy"
+
+
 def _workspace(env: Mapping[str, str], cwd: Path | None) -> Path:
     for name in ("DEPUTY_WORKSPACE", "CLAUDE_PROJECT_DIR"):
         value = _get(env, name)
@@ -171,6 +214,7 @@ def load_settings(env: Mapping[str, str] | None = None, cwd: Path | None = None)
     if effort not in EFFORTS:
         raise ConfigError(f"DEPUTY_THINKING must be one of {', '.join(EFFORTS)}, got {effort!r}")
     mode = read_mode(env)
+    lead_name, lead_in, lead_cached, lead_out = _lead(env)
 
     known = KNOWN_PRICES.get((base_url, model), (0.0, 0.0, 0.0))
     return Settings(
@@ -190,4 +234,10 @@ def load_settings(env: Mapping[str, str] | None = None, cwd: Path | None = None)
         price_input=_float(env, "DEPUTY_PRICE_INPUT", known[0]),
         price_cached=_float(env, "DEPUTY_PRICE_CACHED", known[1]),
         price_output=_float(env, "DEPUTY_PRICE_OUTPUT", known[2]),
+        lead_name=lead_name,
+        lead_price_input=lead_in,
+        lead_price_cached=lead_cached,
+        lead_price_output=lead_out,
+        stats_enabled=_bool(env, "DEPUTY_STATS", True),
+        data_dir=_data_dir(env),
     )

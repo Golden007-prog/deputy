@@ -1,0 +1,9 @@
+# Append this to ~/.codex/config.toml (or a trusted project's .codex/config.toml).
+[mcp_servers.deputy]
+command = "uvx"
+args = ["--from", "git+https://github.com/alimohammadiamirhossein/deputy", "deputy", "serve"]
+env = { DEPUTY_MODE = "accuracy" }
+env_vars = ["DEEPINFRA_API_KEY", "DEPUTY_API_KEY", "DEPUTY_THINKING", "DEPUTY_LEAD_MODEL"]
+# Deputy runs take minutes; Codex's default tool timeout is 60 s.
+startup_timeout_sec = 120
+tool_timeout_sec = 1800
